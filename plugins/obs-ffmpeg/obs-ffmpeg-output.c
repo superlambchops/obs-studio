@@ -30,6 +30,9 @@
 #include "closest-pixel-format.h"
 #include "obs-ffmpeg-compat.h"
 
+#include <time.h>
+#include <sys/stat.h>
+
 struct ffmpeg_cfg {
 	const char         *url;
 	const char         *format_name;
@@ -348,8 +351,32 @@ static inline bool open_output_file(struct ffmpeg_data *data)
 	int ret;
 
 	if ((format->flags & AVFMT_NOFILE) == 0) {
-		ret = avio_open(&data->output->pb, data->config.url,
+		struct stat buf;
+		stat(data->config.url, &buf);
+		if(S_ISDIR(buf.st_mode)){
+			time_t rawtime;
+			struct tm *timestruct;
+			int datestringlength = 16;//must always be one longer to leave space for null termination
+			char date[datestringlength];
+			char urlwdate[strlen(data->config.url) + datestringlength + strlen(data->config.format_name) + 2];//space for directory, '/', date, and file extension with '.'
+			time(&rawtime);
+			timestruct = localtime(&rawtime);
+			strftime(date,datestringlength,"%Y%m%d-%H%M%S",timestruct);
+	//!!!be sure to update datestringlength if you change the format sting above!!!
+			strcpy(urlwdate, data->config.url);
+			if((data->config.url[strlen(data->config.url)-1]) != '/' && (data->config.url[strlen(data->config.url)-1]) != '\\'){
+				strcat(urlwdate, "/");
+			}
+			strcat(urlwdate, date);
+			strcat(urlwdate, ".");
+			strcat(urlwdate, data->config.format_name);
+			blog(LOG_INFO, "A directory was specified saving with date at %s", urlwdate);
+			ret = avio_open(&data->output->pb, urlwdate,
 				AVIO_FLAG_WRITE);
+		} else {
+			ret = avio_open(&data->output->pb, data->config.url,
+					AVIO_FLAG_WRITE);
+		}
 		if (ret < 0) {
 			blog(LOG_WARNING, "Couldn't open '%s', %s",
 					data->config.url, av_err2str(ret));
